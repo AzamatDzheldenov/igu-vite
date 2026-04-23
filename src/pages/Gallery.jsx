@@ -1,6 +1,7 @@
 import { Image } from 'lucide-react'
 import { useContent } from '../context/ContentContext'
 import { formatDate, ui } from '../utils/i18n'
+import { mediaUrl } from '../utils/media'
 
 function Gallery() {
   const { content, language, text } = useContent()
@@ -34,7 +35,7 @@ function Gallery() {
             {gallery.map((item) => (
               <article key={item.id} className="glass-panel-strong overflow-hidden rounded-[20px]">
                 <img
-                  src={item.photo?.url}
+                  src={mediaUrl(item.photo?.url)}
                   alt={text(item.caption)}
                   className="h-72 w-full object-cover"
                 />

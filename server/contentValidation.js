@@ -176,6 +176,8 @@ function normalizeVideo(value) {
       ? {
           url,
           name: asText(value.name, 'Видео', 255),
+          provider: asText(value.provider, 'external', 40),
+          coverUrl: asText(value.coverUrl, '', 1000),
           type: 'external',
           mimeType: '',
           size: null,

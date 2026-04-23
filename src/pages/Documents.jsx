@@ -1,6 +1,7 @@
 import { Download, FileText } from 'lucide-react'
 import { useContent } from '../context/ContentContext'
 import { ui } from '../utils/i18n'
+import { mediaUrl } from '../utils/media'
 
 function Documents() {
   const { content, language, text } = useContent()
@@ -37,7 +38,7 @@ function Documents() {
                 <p className="mt-3 text-sm leading-6 text-muted">{text(document.description)}</p>
                 {document.file ? (
                   <a
-                    href={document.file.url}
+                    href={mediaUrl(document.file.url)}
                     className="focus-ring mt-5 inline-flex items-center gap-2 rounded-lg border border-line/70 bg-panel/60 px-4 py-2 text-sm font-semibold text-text transition hover:border-accent/40 hover:text-accent"
                     target="_blank"
                     rel="noreferrer"

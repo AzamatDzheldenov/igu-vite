@@ -2,6 +2,7 @@ import { CalendarDays, PlayCircle } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useContent } from '../context/ContentContext'
 import { formatDate, ui } from '../utils/i18n'
+import { mediaUrl } from '../utils/media'
 
 const pageSize = 6
 
@@ -48,7 +49,7 @@ function News() {
                     {item.photos.slice(0, 3).map((photo) => (
                       <img
                         key={photo.url}
-                        src={photo.url}
+                        src={mediaUrl(photo.url)}
                         alt={text(item.title)}
                         className="h-64 w-full object-cover"
                       />
@@ -70,18 +71,10 @@ function News() {
                     <div className="mt-5 grid gap-3">
                       {item.videos.map((video) =>
                         video.type === 'external' ? (
-                          <a
-                            key={video.url}
-                            href={video.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-2 rounded-lg border border-line/70 bg-panel/60 px-4 py-3 text-sm font-semibold text-text transition hover:border-accent/40 hover:text-accent"
-                          >
-                            <PlayCircle size={18} /> {video.name}
-                          </a>
+                          <ExternalVideoCard key={video.url} video={video} language={language} />
                         ) : (
                           <video key={video.url} controls className="max-h-[520px] w-full rounded-lg">
-                            <source src={video.url} type={video.mimeType} />
+                            <source src={mediaUrl(video.url)} type={video.mimeType} />
                           </video>
                         ),
                       )}
@@ -115,6 +108,91 @@ function News() {
       </div>
     </section>
   )
+}
+
+function ExternalVideoCard({ video, language }) {
+  const coverUrl = mediaUrl(video.coverUrl || getYoutubeCoverUrl(video.url))
+  const provider = video.provider || getVideoProvider(video.url)
+
+  return (
+    <a
+      href={video.url}
+      target="_blank"
+      rel="noreferrer"
+      className="group grid overflow-hidden rounded-lg border border-line/70 bg-panel/60 transition hover:border-accent/40 sm:grid-cols-[220px_1fr]"
+    >
+      <div className="relative aspect-video bg-accent/12 sm:aspect-auto sm:min-h-36">
+        {coverUrl ? (
+          <img src={coverUrl} alt={video.name} className="h-full w-full object-cover" />
+        ) : (
+          <div className="flex h-full min-h-44 items-center justify-center bg-accent/10 text-accent sm:min-h-full">
+            <PlayCircle size={42} />
+          </div>
+        )}
+        <span className="absolute inset-0 flex items-center justify-center bg-black/20 text-white opacity-95 transition group-hover:bg-black/30">
+          <PlayCircle size={46} />
+        </span>
+      </div>
+      <div className="flex min-h-36 flex-col justify-center p-4">
+        <p className="text-xs font-semibold uppercase text-accent">{providerLabel(provider)}</p>
+        <h3 className="mt-2 text-base font-semibold leading-6 text-text sm:text-lg">
+          {video.name || (language === 'ky' ? 'Видео' : 'Видео')}
+        </h3>
+        <p className="mt-3 text-sm leading-6 text-muted">{language === 'ky' ? 'Видеону ачуу' : 'Открыть видео'}</p>
+      </div>
+    </a>
+  )
+}
+
+function providerLabel(provider) {
+  if (provider === 'youtube') {
+    return 'YouTube'
+  }
+
+  if (provider === 'instagram') {
+    return 'Instagram Reels'
+  }
+
+  return 'Видео'
+}
+
+function getVideoProvider(url) {
+  const normalized = String(url).toLowerCase()
+
+  if (normalized.includes('youtube.com') || normalized.includes('youtu.be')) {
+    return 'youtube'
+  }
+
+  if (normalized.includes('instagram.com')) {
+    return 'instagram'
+  }
+
+  return 'external'
+}
+
+function getYoutubeCoverUrl(url) {
+  const id = getYoutubeId(url)
+  return id ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : ''
+}
+
+function getYoutubeId(url) {
+  try {
+    const parsed = new URL(url)
+
+    if (parsed.hostname.includes('youtu.be')) {
+      return parsed.pathname.split('/').filter(Boolean)[0] || ''
+    }
+
+    if (parsed.searchParams.get('v')) {
+      return parsed.searchParams.get('v')
+    }
+
+    const parts = parsed.pathname.split('/').filter(Boolean)
+    const embedIndex = parts.findIndex((part) => ['embed', 'shorts'].includes(part))
+    return embedIndex >= 0 ? parts[embedIndex + 1] || '' : ''
+  } catch {
+    return ''
+  }
 }
 
 export default News

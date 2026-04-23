@@ -1,5 +1,6 @@
-import { Mail, MapPin, Phone } from 'lucide-react'
+import { Mail, Phone } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import logo from '../assets/logo.png'
 import { useContent } from '../context/ContentContext'
 import { ui } from '../utils/i18n'
 
@@ -13,8 +14,11 @@ function Footer() {
     <footer className="border-t border-line/60 bg-[#111827] text-slate-300">
       <div className="page-shell grid gap-8 py-10 md:grid-cols-[1.3fr_1fr_1fr]">
         <div>
-          <Link to="/" className="text-lg font-semibold text-white">
-            {text(content?.site?.name, 'Колледж ИГУ')}
+          <Link to="/" className="inline-flex items-center gap-3 text-lg font-semibold text-white">
+            <span className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white shadow-soft">
+              <img src={logo} alt="" className="h-full w-full object-contain" />
+            </span>
+            <span>{text(content?.site?.name, 'Колледж ИГУ')}</span>
           </Link>
           <p className="mt-3 max-w-md text-sm leading-6 text-slate-300">
             {text(content?.site?.tagline)}
@@ -44,9 +48,6 @@ function Footer() {
             </span>
             <span className="flex items-center gap-2">
               <Mail size={16} /> {contacts?.email}
-            </span>
-            <span className="flex items-center gap-2">
-              <MapPin size={16} /> {text(contacts?.address)}
             </span>
           </div>
         </div>

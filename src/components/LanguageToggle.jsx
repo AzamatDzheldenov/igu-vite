@@ -4,7 +4,7 @@ function LanguageToggle() {
   const { language, setLanguage } = useContent()
 
   return (
-    <div className="inline-flex h-11 rounded-lg border border-line/60 bg-panel/60 p-1 shadow-soft backdrop-blur-xl">
+    <div className="inline-flex h-11 shrink-0 rounded-lg border border-line/60 bg-panel/60 p-1 shadow-soft backdrop-blur-xl">
       {[
         ['ru', 'RU'],
         ['ky', 'KG'],
@@ -14,7 +14,7 @@ function LanguageToggle() {
           type="button"
           onClick={() => setLanguage(value)}
           className={[
-            'focus-ring rounded-lg px-3 text-xs font-bold transition duration-300',
+            'focus-ring min-w-11 rounded-lg px-2 text-xs font-bold transition duration-300 sm:px-3',
             language === value
               ? 'bg-accent text-white'
               : 'text-muted hover:bg-accent/10 hover:text-accent',

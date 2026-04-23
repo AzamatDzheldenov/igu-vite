@@ -2,6 +2,7 @@ import { UserRound } from 'lucide-react'
 import { Navigate, useParams } from 'react-router-dom'
 import { useContent } from '../context/ContentContext'
 import { ui } from '../utils/i18n'
+import { mediaUrl } from '../utils/media'
 
 function Pck() {
   const { slug } = useParams()
@@ -43,7 +44,7 @@ function Pck() {
                 >
                   {teacher.photo ? (
                     <img
-                      src={teacher.photo.url}
+                      src={mediaUrl(teacher.photo.url)}
                       alt={text(teacher.fullName)}
                       className="h-72 w-full object-cover"
                     />

@@ -1,5 +1,6 @@
 import { Moon, Sun } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { useContent } from '../context/ContentContext'
 
 function getInitialTheme() {
   if (typeof window === 'undefined') {
@@ -17,7 +18,15 @@ function getInitialTheme() {
 
 function ThemeToggle() {
   const [theme, setTheme] = useState(getInitialTheme)
+  const { language } = useContent()
   const isDark = theme === 'dark'
+  const label = isDark
+    ? language === 'ky'
+      ? 'Жарык теманы күйгүзүү'
+      : 'Включить светлую тему'
+    : language === 'ky'
+      ? 'Караңгы теманы күйгүзүү'
+      : 'Включить темную тему'
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', isDark)
@@ -28,9 +37,9 @@ function ThemeToggle() {
     <button
       type="button"
       onClick={() => setTheme(isDark ? 'light' : 'dark')}
-      className="focus-ring inline-flex h-11 w-11 items-center justify-center rounded-lg border border-line/60 bg-panel/60 text-text shadow-soft backdrop-blur-xl transition duration-300 hover:-translate-y-0.5 hover:border-accent/40 hover:text-accent"
-      aria-label={isDark ? 'Включить светлую тему' : 'Включить темную тему'}
-      title={isDark ? 'Светлая тема' : 'Темная тема'}
+      className="focus-ring inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-line/60 bg-panel/60 text-text shadow-soft backdrop-blur-xl transition duration-300 hover:-translate-y-0.5 hover:border-accent/40 hover:text-accent"
+      aria-label={label}
+      title={label}
     >
       {isDark ? <Sun size={19} /> : <Moon size={19} />}
     </button>

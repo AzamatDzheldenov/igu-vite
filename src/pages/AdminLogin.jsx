@@ -26,7 +26,15 @@ function AdminLogin() {
       await axiosInstance.post('/auth/login', { login, password })
       navigate('/admin', { replace: true })
     } catch (requestError) {
-      setError(requestError.response?.data?.message || 'Не удалось войти.')
+      const status = requestError.response?.status
+
+      if (status === 429) {
+        setError('Слишком много попыток входа. Попробуйте позже.')
+      } else if (status === 401) {
+        setError('Неверный логин или пароль.')
+      } else {
+        setError(requestError.response?.data?.message || 'Не удалось войти. Попробуйте еще раз.')
+      }
     } finally {
       setIsSubmitting(false)
     }
@@ -71,7 +79,7 @@ function AdminLogin() {
           </div>
 
           {error && (
-            <p className="mt-5 rounded-lg bg-coral/12 px-4 py-3 text-sm font-medium text-coral">
+            <p className="mt-5 rounded-lg bg-coral/12 px-4 py-3 text-sm font-medium text-coral" role="alert">
               {error}
             </p>
           )}

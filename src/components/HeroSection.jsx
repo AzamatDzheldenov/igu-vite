@@ -1,6 +1,6 @@
 import { ArrowRight, BookOpen, Sparkles } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import campusHero from '../assets/campus-hero.jpeg'
+import homeHeroBg from '../assets/home-hero-bg.png'
 import { useContent } from '../context/ContentContext'
 
 function HeroSection() {
@@ -11,7 +11,7 @@ function HeroSection() {
     <section className="relative min-h-[720px] overflow-hidden pt-32 sm:pt-36">
       <div
         className="absolute inset-0 bg-cover bg-center"
-        style={{ backgroundImage: `url(${campusHero})` }}
+        style={{ backgroundImage: `url(${homeHeroBg})` }}
         aria-hidden="true"
       />
       <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] dark:bg-black/60" />

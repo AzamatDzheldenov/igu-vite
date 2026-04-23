@@ -10,7 +10,15 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { normalizeContent } from './contentValidation.js'
-import { clearExpiredSessions, db, getSiteContent, initializeDatabase, updateSiteContent } from './db.js'
+import {
+  clearExpiredSessions,
+  db,
+  findUserByUsername,
+  getSiteContent,
+  initializeDatabase,
+  markUserLogin,
+  updateSiteContent,
+} from './db.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -22,6 +30,11 @@ const port = Number(process.env.PORT || 4000)
 const isProduction = process.env.NODE_ENV === 'production'
 const sessionCookieName = 'igu_admin_session'
 const sessionTtlMs = 1000 * 60 * 60 * 8
+const allowedOrigins = buildAllowedOrigins()
+
+if (isProduction) {
+  app.set('trust proxy', 1)
+}
 
 const uploadLimits = {
   image: 10 * 1024 * 1024,
@@ -44,7 +57,13 @@ const mimeGroups = {
 }
 
 fs.mkdirSync(uploadDir, { recursive: true })
-initializeDatabase()
+
+try {
+  initializeDatabase()
+} catch (error) {
+  console.error(`[security] startup_failed message=${sanitizeLogValue(error.message)}`)
+  process.exit(1)
+}
 
 app.use(
   helmet({
@@ -54,10 +73,12 @@ app.use(
 app.use(express.json({ limit: '2mb' }))
 app.use(cookieParser())
 app.use('/uploads', express.static(uploadDir))
+app.use(verifySameOriginForStateChangingRequests)
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 10,
+  limit: 8,
+  message: { message: 'Слишком много попыток входа. Попробуйте позже.' },
   standardHeaders: true,
   legacyHeaders: false,
 })
@@ -108,22 +129,23 @@ app.post('/api/applications', (request, response) => {
 })
 
 app.post('/api/auth/login', authLimiter, (request, response) => {
-  const login = typeof request.body?.login === 'string' ? request.body.login.trim() : ''
+  const username = typeof request.body?.login === 'string' ? request.body.login.trim() : ''
   const password = typeof request.body?.password === 'string' ? request.body.password : ''
 
-  if (!login || !password) {
+  if (!username || !password) {
     return response.status(400).json({ message: 'Введите логин и пароль.' })
   }
 
-  const user = db
-    .prepare('SELECT id, login, password_hash, role FROM users WHERE login = ?')
-    .get(login)
+  const user = findUserByUsername(username)
+  const hasValidPassword = user ? bcrypt.compareSync(password, user.password_hash) : false
 
-  if (!user || !bcrypt.compareSync(password, user.password_hash)) {
+  if (!user || !user.is_active || !['admin', 'smm'].includes(user.role) || !hasValidPassword) {
+    securityLog('login_failed', request, { username })
     return response.status(401).json({ message: 'Неверный логин или пароль.' })
   }
 
   clearExpiredSessions()
+  markUserLogin(user.id)
 
   const sessionId = crypto.randomBytes(32).toString('hex')
   const expiresAt = Date.now() + sessionTtlMs
@@ -142,11 +164,14 @@ app.post('/api/auth/login', authLimiter, (request, response) => {
     path: '/',
   })
 
-  return response.json({ user: { login: user.login, role: user.role } })
+  securityLog('login_success', request, { username: user.username, role: user.role })
+
+  return response.json({ user: { login: user.username, username: user.username, role: user.role } })
 })
 
 app.post('/api/auth/logout', (request, response) => {
   const sessionId = request.cookies?.[sessionCookieName]
+  const session = sessionId ? getSessionUser(sessionId) : null
 
   if (sessionId) {
     db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId)
@@ -158,14 +183,16 @@ app.post('/api/auth/logout', (request, response) => {
     secure: isProduction,
     path: '/',
   })
+
+  securityLog('logout', request, { username: session?.username || 'unknown' })
   response.json({ ok: true })
 })
 
-app.get('/api/auth/me', requireAdmin, (request, response) => {
+app.get('/api/auth/me', requireEditor, (request, response) => {
   response.json({ user: request.user })
 })
 
-app.post('/api/admin/uploads', requireAdmin, upload.single('file'), (request, response) => {
+app.post('/api/admin/uploads', requireEditor, upload.single('file'), (request, response) => {
   if (!request.file) {
     return response.status(400).json({ message: 'Приложите файл.' })
   }
@@ -194,8 +221,12 @@ app.post('/api/admin/uploads', requireAdmin, upload.single('file'), (request, re
   })
 })
 
-app.put('/api/admin/content', requireAdmin, (request, response) => {
-  const normalized = normalizeContent(request.body)
+app.put('/api/admin/content', requireEditor, (request, response) => {
+  const incoming =
+    request.user.role === 'smm'
+      ? buildSmmScopedContent(request)
+      : request.body
+  const normalized = normalizeContent(incoming)
   response.json(updateSiteContent(normalized))
 })
 
@@ -218,39 +249,180 @@ app.use((error, _request, response, _next) => {
 app.listen(port, () => {
   console.log(`API server is running on http://127.0.0.1:${port}`)
 
-  if (!process.env.ADMIN_LOGIN || !process.env.ADMIN_PASSWORD) {
-    console.log('Using development admin credentials: admin / admin123')
+  if (!isProduction) {
+    console.log('Development auth bootstrap is enabled for missing users only.')
+    console.log('Fallback development users: admin / admin123 and smm / smm123')
   }
 })
 
-function requireAdmin(request, response, next) {
-  const sessionId = request.cookies?.[sessionCookieName]
+function requireEditor(request, response, next) {
+  return requireRoles(['admin', 'smm'])(request, response, next)
+}
 
-  if (!sessionId) {
-    return response.status(401).json({ message: 'Требуется вход администратора.' })
+function requireRoles(roles) {
+  return (request, response, next) => {
+    const sessionId = request.cookies?.[sessionCookieName]
+
+    if (!sessionId) {
+      return response.status(401).json({ message: 'Требуется вход в панель управления.' })
+    }
+
+    const session = getSessionUser(sessionId)
+
+    if (!session || session.expires_at <= Date.now()) {
+      db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId)
+      return response.status(401).json({ message: 'Сессия истекла. Войдите снова.' })
+    }
+
+    if (!session.is_active) {
+      db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId)
+      securityLog('access_denied_inactive_user', request, { username: session.username })
+      return response.status(401).json({ message: 'Сессия недействительна. Войдите снова.' })
+    }
+
+    if (!roles.includes(session.role)) {
+      securityLog('access_denied_role', request, {
+        username: session.username,
+        role: session.role,
+        path: request.path,
+      })
+      return response.status(403).json({ message: 'Недостаточно прав для этого действия.' })
+    }
+
+    request.user = {
+      id: session.user_id,
+      login: session.username,
+      username: session.username,
+      role: session.role,
+    }
+
+    return next()
   }
+}
 
-  const session = db
+function getSessionUser(sessionId) {
+  return db
     .prepare(
-      `SELECT sessions.id, sessions.expires_at, users.id AS user_id, users.login, users.role
+      `SELECT sessions.id, sessions.expires_at, users.id AS user_id, users.username, users.role, users.is_active
        FROM sessions
        JOIN users ON users.id = sessions.user_id
        WHERE sessions.id = ?`,
     )
     .get(sessionId)
+}
 
-  if (!session || session.expires_at <= Date.now() || session.role !== 'admin') {
-    db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId)
-    return response.status(401).json({ message: 'Сессия истекла.' })
+function buildSmmScopedContent(request) {
+  const incomingKeys =
+    request.body && typeof request.body === 'object' && !Array.isArray(request.body)
+      ? Object.keys(request.body)
+      : []
+  const blockedKeys = incomingKeys.filter((key) => key !== 'news')
+
+  if (blockedKeys.length > 0) {
+    securityLog('smm_scope_enforced', request, {
+      username: request.user.username,
+      blockedKeys: blockedKeys.join(','),
+    })
   }
 
-  request.user = {
-    id: session.user_id,
-    login: session.login,
-    role: session.role,
+  return { ...getSiteContent(), news: request.body?.news }
+}
+
+function verifySameOriginForStateChangingRequests(request, response, next) {
+  if (!request.path.startsWith('/api') || !['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method)) {
+    return next()
   }
 
-  return next()
+  const source = request.get('origin') || request.get('referer')
+
+  if (!source) {
+    if (!isProduction) {
+      return next()
+    }
+
+    securityLog('csrf_blocked_missing_origin', request, { path: request.path })
+    return response.status(403).json({ message: 'Запрос отклонен проверкой безопасности.' })
+  }
+
+  const sourceOrigin = parseOrigin(source)
+
+  if (sourceOrigin && isAllowedOrigin(request, sourceOrigin)) {
+    return next()
+  }
+
+  securityLog('csrf_blocked_origin', request, {
+    origin: sourceOrigin || 'invalid',
+    path: request.path,
+  })
+  return response.status(403).json({ message: 'Запрос отклонен проверкой безопасности.' })
+}
+
+function buildAllowedOrigins() {
+  const configured = [process.env.PUBLIC_SITE_ORIGIN, process.env.ALLOWED_ORIGINS]
+    .filter(Boolean)
+    .flatMap((value) => value.split(','))
+    .map((value) => value.trim())
+    .filter(Boolean)
+
+  const origins = new Set(configured)
+
+  if (!isProduction) {
+    origins.add('http://127.0.0.1:5173')
+    origins.add('http://localhost:5173')
+    origins.add('http://127.0.0.1:4000')
+    origins.add('http://localhost:4000')
+  }
+
+  return origins
+}
+
+function isAllowedOrigin(request, sourceOrigin) {
+  if (allowedOrigins.has(sourceOrigin)) {
+    return true
+  }
+
+  const requestOrigin = getRequestOrigin(request)
+  return Boolean(requestOrigin && requestOrigin === sourceOrigin)
+}
+
+function getRequestOrigin(request) {
+  const host = request.get('x-forwarded-host') || request.get('host')
+
+  if (!host) {
+    return ''
+  }
+
+  const forwardedProto = request.get('x-forwarded-proto')?.split(',')[0]?.trim()
+  const protocol = forwardedProto || request.protocol
+  return `${protocol}://${host}`
+}
+
+function parseOrigin(source) {
+  try {
+    return new URL(source).origin
+  } catch {
+    return ''
+  }
+}
+
+function securityLog(event, request, details = {}) {
+  const fields = {
+    ip: request.ip,
+    method: request.method,
+    path: request.path,
+    ...details,
+  }
+
+  const serialized = Object.entries(fields)
+    .filter(([, value]) => value !== undefined && value !== null && value !== '')
+    .map(([key, value]) => `${key}=${sanitizeLogValue(value)}`)
+    .join(' ')
+
+  console.info(`[security] ${event}${serialized ? ` ${serialized}` : ''}`)
+}
+
+function sanitizeLogValue(value) {
+  return String(value).replace(/\s+/g, '_').slice(0, 180)
 }
 
 function inferType(mimeType) {

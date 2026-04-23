@@ -1,6 +1,7 @@
-import { GraduationCap, Menu, X } from 'lucide-react'
-import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Menu, X } from 'lucide-react'
+import { useEffect, useId, useState } from 'react'
+import { Link, useLocation } from 'react-router-dom'
+import logo from '../assets/logo.png'
 import { useContent } from '../context/ContentContext'
 import LanguageToggle from './LanguageToggle'
 import NavBar from './NavBar'
@@ -8,40 +9,48 @@ import ThemeToggle from './ThemeToggle'
 
 function Header() {
   const [isOpen, setIsOpen] = useState(false)
-  const { content, text } = useContent()
+  const location = useLocation()
+  const menuId = useId()
+  const { language } = useContent()
+
+  useEffect(() => {
+    setIsOpen(false)
+  }, [location.pathname])
 
   return (
-    <header className="fixed inset-x-0 top-0 z-50 px-4 pt-4 sm:px-6">
-      <div className="glass-panel mx-auto max-w-7xl rounded-[25px] px-3 py-3">
-        <div className="flex items-center justify-between gap-3">
+    <header className="fixed inset-x-0 top-0 z-50 px-2 pt-2 sm:px-6 sm:pt-4">
+      <div className="glass-panel mx-auto w-full max-w-[96rem] rounded-[20px] px-3 py-3 sm:rounded-[25px] sm:px-4 sm:py-4">
+        <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2 sm:gap-3">
           <Link
             to="/"
-            className="focus-ring flex min-w-0 items-center gap-3 rounded-lg px-2 py-1 text-text"
+            aria-label={language === 'ky' ? 'Башкы бетке өтүү' : 'На главную'}
+            className="focus-ring flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-text"
             onClick={() => setIsOpen(false)}
           >
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-accent text-white shadow-soft">
-              <GraduationCap size={24} />
-            </span>
-            <span className="min-w-0">
-              <span className="block truncate text-base font-semibold sm:text-lg">
-                {text(content?.site?.name, 'Колледж ИГУ')}
-              </span>
-              <span className="block truncate text-xs text-muted sm:text-sm">
-                {text(content?.site?.tagline, 'Колледж')}
-              </span>
+            <span className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white shadow-soft sm:h-16 sm:w-16">
+              <img src={logo} alt="" className="h-full w-full object-contain" />
             </span>
           </Link>
 
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 items-center justify-end gap-1.5 sm:gap-2">
             <NavBar />
             <LanguageToggle />
             <ThemeToggle />
             <button
               type="button"
-              className="focus-ring inline-flex h-11 w-11 items-center justify-center rounded-lg border border-line/60 bg-panel/60 text-text shadow-soft backdrop-blur-xl transition duration-300 hover:border-accent/40 hover:text-accent lg:hidden"
+              className="focus-ring inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-line/60 bg-panel/60 text-text shadow-soft backdrop-blur-xl transition duration-300 hover:border-accent/40 hover:text-accent lg:hidden"
               onClick={() => setIsOpen((value) => !value)}
-              aria-label={isOpen ? 'Закрыть меню' : 'Открыть меню'}
+              aria-label={
+                isOpen
+                  ? language === 'ky'
+                    ? 'Менюну жабуу'
+                    : 'Закрыть меню'
+                  : language === 'ky'
+                    ? 'Менюну ачуу'
+                    : 'Открыть меню'
+              }
               aria-expanded={isOpen}
+              aria-controls={menuId}
             >
               {isOpen ? <X size={21} /> : <Menu size={21} />}
             </button>
@@ -49,9 +58,13 @@ function Header() {
         </div>
 
         <div
+          id={menuId}
+          aria-hidden={!isOpen}
           className={[
             'grid overflow-hidden transition-all duration-300 lg:hidden',
-            isOpen ? 'grid-rows-[1fr] pt-3 opacity-100' : 'grid-rows-[0fr] opacity-0',
+            isOpen
+              ? 'grid-rows-[1fr] pt-3 opacity-100'
+              : 'pointer-events-none grid-rows-[0fr] opacity-0',
           ].join(' ')}
         >
           <div className="min-h-0">

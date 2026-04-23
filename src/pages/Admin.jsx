@@ -3,8 +3,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useContent } from '../context/ContentContext'
 import axiosInstance from '../utils/axiosInstance'
+import { mediaUrl } from '../utils/media'
 
-const tabs = ['Новости', 'Документы', 'Галерея', 'Состав ПЦК']
+const adminTabs = ['Главная', 'Новости', 'Документы', 'Галерея', 'Состав ПЦК']
+const smmTabs = ['Новости']
 
 const emptyBi = { ru: '', ky: '' }
 
@@ -12,14 +14,26 @@ function Admin() {
   const navigate = useNavigate()
   const { content, setContent, isLoading } = useContent()
   const [draft, setDraft] = useState(null)
-  const [activeTab, setActiveTab] = useState(tabs[0])
+  const [user, setUser] = useState(null)
+  const [activeTab, setActiveTab] = useState(adminTabs[0])
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
   const [isSaving, setIsSaving] = useState(false)
 
   useEffect(() => {
-    axiosInstance.get('/auth/me').catch(() => navigate('/admin-login', { replace: true }))
+    axiosInstance
+      .get('/auth/me')
+      .then((response) => setUser(response.data.user))
+      .catch(() => navigate('/admin-login', { replace: true }))
   }, [navigate])
+
+  const tabs = user?.role === 'smm' ? smmTabs : adminTabs
+
+  useEffect(() => {
+    if (user?.role === 'smm' && activeTab !== 'Новости') {
+      setActiveTab('Новости')
+    }
+  }, [activeTab, user])
 
   useEffect(() => {
     if (content) {
@@ -118,7 +132,7 @@ function Admin() {
   }
 
   return (
-    <section className="section-pad pt-36">
+    <section className="section-pad pt-28 sm:pt-36">
       <div className="page-shell">
         <div className="glass-panel rounded-[25px] p-5 sm:p-7">
           <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
@@ -128,7 +142,9 @@ function Admin() {
                 Публикации и медиа колледжа
               </h1>
               <p className="mt-3 max-w-3xl text-sm leading-6 text-muted">
-                Админка скрыта из меню и работает через защищенный серверный API.
+                {user?.role === 'smm'
+                  ? 'SMM-доступ открыт только для публикации новостей и медиа.'
+                  : 'Админка скрыта из меню и работает через защищенный серверный API.'}
               </p>
             </div>
             <div className="flex flex-col gap-2 sm:flex-row">
@@ -136,14 +152,14 @@ function Admin() {
                 type="button"
                 onClick={saveContent}
                 disabled={isSaving}
-                className="focus-ring inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-5 py-3 text-sm font-semibold text-white shadow-soft transition hover:-translate-y-0.5 disabled:opacity-60"
+                className="focus-ring inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-accent px-5 py-3 text-sm font-semibold text-white shadow-soft transition hover:-translate-y-0.5 disabled:opacity-60"
               >
                 <Save size={17} /> {isSaving ? 'Сохраняем...' : 'Сохранить'}
               </button>
               <button
                 type="button"
                 onClick={logout}
-                className="focus-ring inline-flex items-center justify-center gap-2 rounded-lg border border-line/70 bg-panel/60 px-5 py-3 text-sm font-semibold text-text transition hover:border-coral/40 hover:text-coral"
+                className="focus-ring inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-line/70 bg-panel/60 px-5 py-3 text-sm font-semibold text-text transition hover:border-coral/40 hover:text-coral"
               >
                 <LogOut size={17} /> Выйти
               </button>
@@ -163,14 +179,14 @@ function Admin() {
         </div>
 
         <div className="mt-6 grid gap-6 lg:grid-cols-[240px_1fr]">
-          <div className="glass-panel-strong rounded-[20px] p-2">
+          <div className="glass-panel-strong flex gap-2 overflow-x-auto rounded-[20px] p-2 lg:grid lg:overflow-visible">
             {tabs.map((tab) => (
               <button
                 key={tab}
                 type="button"
                 onClick={() => setActiveTab(tab)}
                 className={[
-                  'w-full rounded-lg px-4 py-3 text-left text-sm font-semibold transition',
+                  'min-h-11 shrink-0 rounded-lg px-4 py-3 text-left text-sm font-semibold transition lg:w-full',
                   activeTab === tab
                     ? 'bg-accent text-white'
                     : 'text-muted hover:bg-accent/10 hover:text-accent',
@@ -182,6 +198,14 @@ function Admin() {
           </div>
 
           <div className="glass-panel rounded-[25px] p-5 sm:p-7">
+            {activeTab === 'Главная' && (
+              <HomeEditor
+                draft={draft}
+                updateField={updateField}
+                addItem={addItem}
+                removeItem={removeItem}
+              />
+            )}
             {activeTab === 'Новости' && (
               <NewsEditor
                 draft={draft}
@@ -225,6 +249,239 @@ function Admin() {
   )
 }
 
+function HomeEditor({ draft, updateField, addItem, removeItem }) {
+  const home = draft.staticPages.home
+  const hero = home.hero
+
+  const addStat = () => {
+    if (hero.stats.length >= 4) {
+      return
+    }
+
+    addItem(['staticPages', 'home', 'hero', 'stats'], {
+      value: '',
+      label: structuredClone(emptyBi),
+    })
+  }
+
+  const addHighlight = () => {
+    addItem(['staticPages', 'home', 'highlights'], {
+      title: structuredClone(emptyBi),
+      text: structuredClone(emptyBi),
+    })
+  }
+
+  const addTestimonial = () => {
+    addItem(['staticPages', 'home', 'testimonials'], {
+      name: structuredClone(emptyBi),
+      program: structuredClone(emptyBi),
+      text: structuredClone(emptyBi),
+    })
+  }
+
+  return (
+    <div className="grid gap-6">
+      <PanelHeader
+        title="Главная"
+        text="Редактируйте название сайта, хедер и основные блоки главной страницы."
+        action={null}
+      />
+
+      <EditorGroup title="Хедер и футер">
+        <div className="grid gap-4 md:grid-cols-2">
+          <TextInput
+            label="Название сайта RU"
+            value={draft.site.name.ru}
+            onChange={(value) => updateField(['site', 'name', 'ru'], value)}
+          />
+          <TextInput
+            label="Название сайта KG"
+            value={draft.site.name.ky}
+            onChange={(value) => updateField(['site', 'name', 'ky'], value)}
+          />
+          <TextInput
+            label="Подзаголовок RU"
+            value={draft.site.tagline.ru}
+            onChange={(value) => updateField(['site', 'tagline', 'ru'], value)}
+          />
+          <TextInput
+            label="Подзаголовок KG"
+            value={draft.site.tagline.ky}
+            onChange={(value) => updateField(['site', 'tagline', 'ky'], value)}
+          />
+        </div>
+      </EditorGroup>
+
+      <EditorGroup title="Hero блок">
+        <div className="grid gap-4 md:grid-cols-2">
+          <TextInput
+            label="Badge RU"
+            value={hero.badge.ru}
+            onChange={(value) => updateField(['staticPages', 'home', 'hero', 'badge', 'ru'], value)}
+          />
+          <TextInput
+            label="Badge KG"
+            value={hero.badge.ky}
+            onChange={(value) => updateField(['staticPages', 'home', 'hero', 'badge', 'ky'], value)}
+          />
+          <TextInput
+            label="Заголовок RU"
+            value={hero.title.ru}
+            onChange={(value) => updateField(['staticPages', 'home', 'hero', 'title', 'ru'], value)}
+          />
+          <TextInput
+            label="Заголовок KG"
+            value={hero.title.ky}
+            onChange={(value) => updateField(['staticPages', 'home', 'hero', 'title', 'ky'], value)}
+          />
+          <TextArea
+            label="Текст RU"
+            value={hero.text.ru}
+            onChange={(value) => updateField(['staticPages', 'home', 'hero', 'text', 'ru'], value)}
+          />
+          <TextArea
+            label="Текст KG"
+            value={hero.text.ky}
+            onChange={(value) => updateField(['staticPages', 'home', 'hero', 'text', 'ky'], value)}
+          />
+          <TextInput
+            label="Кнопка 1 RU"
+            value={hero.primaryButton.ru}
+            onChange={(value) => updateField(['staticPages', 'home', 'hero', 'primaryButton', 'ru'], value)}
+          />
+          <TextInput
+            label="Кнопка 1 KG"
+            value={hero.primaryButton.ky}
+            onChange={(value) => updateField(['staticPages', 'home', 'hero', 'primaryButton', 'ky'], value)}
+          />
+          <TextInput
+            label="Кнопка 2 RU"
+            value={hero.secondaryButton.ru}
+            onChange={(value) => updateField(['staticPages', 'home', 'hero', 'secondaryButton', 'ru'], value)}
+          />
+          <TextInput
+            label="Кнопка 2 KG"
+            value={hero.secondaryButton.ky}
+            onChange={(value) => updateField(['staticPages', 'home', 'hero', 'secondaryButton', 'ky'], value)}
+          />
+        </div>
+      </EditorGroup>
+
+      <EditorGroup
+        title="Статистика Hero"
+        action={hero.stats.length < 4 ? <AddButton onClick={addStat} label="Добавить" /> : null}
+      >
+        <div className="grid gap-4">
+          {hero.stats.map((item, index) => (
+            <article key={index} className="rounded-[20px] border border-line/60 bg-panel/60 p-4">
+              <div className="grid gap-4 md:grid-cols-[140px_1fr_1fr_auto] md:items-end">
+                <TextInput
+                  label="Значение"
+                  value={item.value}
+                  onChange={(value) => updateField(['staticPages', 'home', 'hero', 'stats', index, 'value'], value)}
+                />
+                <TextInput
+                  label="Подпись RU"
+                  value={item.label.ru}
+                  onChange={(value) => updateField(['staticPages', 'home', 'hero', 'stats', index, 'label', 'ru'], value)}
+                />
+                <TextInput
+                  label="Подпись KG"
+                  value={item.label.ky}
+                  onChange={(value) => updateField(['staticPages', 'home', 'hero', 'stats', index, 'label', 'ky'], value)}
+                />
+                <RemoveIconButton onClick={() => removeItem(['staticPages', 'home', 'hero', 'stats'], index)} />
+              </div>
+            </article>
+          ))}
+        </div>
+      </EditorGroup>
+
+      <EditorGroup title="Карточки преимуществ" action={<AddButton onClick={addHighlight} label="Добавить" />}>
+        <div className="grid gap-4">
+          {home.highlights.map((item, index) => (
+            <article key={index} className="rounded-[20px] border border-line/60 bg-panel/60 p-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <TextInput
+                  label="Заголовок RU"
+                  value={item.title.ru}
+                  onChange={(value) => updateField(['staticPages', 'home', 'highlights', index, 'title', 'ru'], value)}
+                />
+                <TextInput
+                  label="Заголовок KG"
+                  value={item.title.ky}
+                  onChange={(value) => updateField(['staticPages', 'home', 'highlights', index, 'title', 'ky'], value)}
+                />
+                <TextArea
+                  label="Текст RU"
+                  value={item.text.ru}
+                  onChange={(value) => updateField(['staticPages', 'home', 'highlights', index, 'text', 'ru'], value)}
+                />
+                <TextArea
+                  label="Текст KG"
+                  value={item.text.ky}
+                  onChange={(value) => updateField(['staticPages', 'home', 'highlights', index, 'text', 'ky'], value)}
+                />
+              </div>
+              <div className="mt-4 flex justify-end">
+                <RemoveIconButton onClick={() => removeItem(['staticPages', 'home', 'highlights'], index)} />
+              </div>
+            </article>
+          ))}
+        </div>
+      </EditorGroup>
+
+      <EditorGroup title="Отзывы" action={<AddButton onClick={addTestimonial} label="Добавить" />}>
+        <div className="grid gap-4">
+          {home.testimonials.map((item, index) => (
+            <article key={index} className="rounded-[20px] border border-line/60 bg-panel/60 p-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <TextInput
+                  label="Имя RU"
+                  value={item.name.ru}
+                  onChange={(value) => updateField(['staticPages', 'home', 'testimonials', index, 'name', 'ru'], value)}
+                />
+                <TextInput
+                  label="Имя KG"
+                  value={item.name.ky}
+                  onChange={(value) => updateField(['staticPages', 'home', 'testimonials', index, 'name', 'ky'], value)}
+                />
+                <TextInput
+                  label="Программа RU"
+                  value={item.program.ru}
+                  onChange={(value) =>
+                    updateField(['staticPages', 'home', 'testimonials', index, 'program', 'ru'], value)
+                  }
+                />
+                <TextInput
+                  label="Программа KG"
+                  value={item.program.ky}
+                  onChange={(value) =>
+                    updateField(['staticPages', 'home', 'testimonials', index, 'program', 'ky'], value)
+                  }
+                />
+                <TextArea
+                  label="Текст RU"
+                  value={item.text.ru}
+                  onChange={(value) => updateField(['staticPages', 'home', 'testimonials', index, 'text', 'ru'], value)}
+                />
+                <TextArea
+                  label="Текст KG"
+                  value={item.text.ky}
+                  onChange={(value) => updateField(['staticPages', 'home', 'testimonials', index, 'text', 'ky'], value)}
+                />
+              </div>
+              <div className="mt-4 flex justify-end">
+                <RemoveIconButton onClick={() => removeItem(['staticPages', 'home', 'testimonials'], index)} />
+              </div>
+            </article>
+          ))}
+        </div>
+      </EditorGroup>
+    </div>
+  )
+}
+
 function NewsEditor({ draft, updateField, addItem, removeItem, uploadFile }) {
   const sortedIndexes = useMemo(
     () =>
@@ -260,7 +517,7 @@ function NewsEditor({ draft, updateField, addItem, removeItem, uploadFile }) {
 
       {sortedIndexes.map(({ item, index }) => (
         <article key={item.id} className="rounded-[20px] border border-line/60 bg-panel/45 p-4">
-          <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
             <div className="grid gap-4">
               <TextInput
                 label="Заголовок RU"
@@ -293,7 +550,7 @@ function NewsEditor({ draft, updateField, addItem, removeItem, uploadFile }) {
                 tall
                 onChange={(value) => updateField(['news', index, 'text', 'ky'], value)}
               />
-              <div className="flex flex-wrap gap-3">
+              <div className="grid gap-3 sm:flex sm:flex-wrap">
                 <UploadButton
                   label="Фото"
                   icon={<Image size={17} />}
@@ -318,13 +575,16 @@ function NewsEditor({ draft, updateField, addItem, removeItem, uploadFile }) {
                 />
                 <button
                   type="button"
-                  className="focus-ring rounded-lg border border-line/70 px-4 py-2 text-sm font-semibold text-text transition hover:text-accent"
+                  className="focus-ring inline-flex min-h-11 items-center justify-center rounded-lg border border-line/70 px-4 py-2 text-sm font-semibold text-text transition hover:text-accent"
                   onClick={() => {
                     const url = window.prompt('Ссылка на видео')
                     if (url) {
+                      const name = window.prompt('Заголовок видео', buildExternalVideoTitle(url))
+                      const coverUrl = window.prompt('Ссылка на обложку (можно оставить пустой)', getYoutubeCoverUrl(url))
+
                       updateField(['news', index, 'videos'], [
                         ...item.videos,
-                        { url, name: url, type: 'external', mimeType: '', size: null },
+                        buildExternalVideo(url, name, coverUrl),
                       ])
                     }
                   }}
@@ -359,7 +619,7 @@ function NewsEditor({ draft, updateField, addItem, removeItem, uploadFile }) {
                 {item.text.ru || 'Текст новости будет выглядеть как публикация.'}
               </p>
               {item.photos[0] && (
-                <img src={item.photos[0].url} alt="" className="mt-4 h-44 w-full rounded-lg object-cover" />
+                <img src={mediaUrl(item.photos[0].url)} alt="" className="mt-4 h-44 w-full rounded-lg object-cover" />
               )}
             </div>
           </div>
@@ -461,7 +721,7 @@ function GalleryEditor({ draft, updateField, addItem, removeItem, uploadFile }) 
       <div className="grid gap-4 md:grid-cols-2">
         {draft.gallery.map((item, index) => (
           <article key={item.id} className="rounded-[20px] border border-line/60 bg-panel/45 p-4">
-            {item.photo && <img src={item.photo.url} alt="" className="mb-4 h-52 w-full rounded-lg object-cover" />}
+            {item.photo && <img src={mediaUrl(item.photo.url)} alt="" className="mb-4 h-52 w-full rounded-lg object-cover" />}
             <TextInput
               label="Подпись RU"
               value={item.caption.ru}
@@ -538,7 +798,7 @@ function PckEditor({ draft, updateField, addItem, removeItem, uploadFile }) {
             {(pck?.teachers || []).map((teacher, teacherIndex) => (
               <article key={teacherIndex} className="rounded-[20px] border border-line/60 bg-panel/60 p-4">
                 {teacher.photo && (
-                  <img src={teacher.photo.url} alt="" className="mb-4 h-52 w-full rounded-lg object-cover" />
+                  <img src={mediaUrl(teacher.photo.url)} alt="" className="mb-4 h-52 w-full rounded-lg object-cover" />
                 )}
                 <TextInput
                   label="ФИО RU"
@@ -591,6 +851,18 @@ function PckEditor({ draft, updateField, addItem, removeItem, uploadFile }) {
   )
 }
 
+function EditorGroup({ title, action, children }) {
+  return (
+    <section className="rounded-[20px] border border-line/60 bg-panel/45 p-4">
+      <div className="mb-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+        <h3 className="text-xl font-semibold text-text">{title}</h3>
+        {action}
+      </div>
+      {children}
+    </section>
+  )
+}
+
 function PanelHeader({ title, text, action }) {
   return (
     <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
@@ -607,7 +879,7 @@ function TextInput({ label, value, onChange }) {
   return (
     <label className="block">
       <span className="mb-2 block text-sm font-semibold text-text">{label}</span>
-      <input className="field-input" value={value || ''} onChange={(event) => onChange(event.target.value)} />
+      <input className="field-input min-h-11" value={value || ''} onChange={(event) => onChange(event.target.value)} />
     </label>
   )
 }
@@ -630,7 +902,7 @@ function AddButton({ onClick, label }) {
     <button
       type="button"
       onClick={onClick}
-      className="focus-ring inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white shadow-soft transition hover:-translate-y-0.5"
+      className="focus-ring inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white shadow-soft transition hover:-translate-y-0.5"
     >
       <Plus size={17} /> {label}
     </button>
@@ -642,7 +914,7 @@ function RemoveIconButton({ onClick }) {
     <button
       type="button"
       onClick={onClick}
-      className="focus-ring inline-flex items-center justify-center gap-2 rounded-lg border border-coral/30 px-4 py-2 text-sm font-semibold text-coral transition hover:bg-coral hover:text-white"
+      className="focus-ring inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-coral/30 px-4 py-2 text-sm font-semibold text-coral transition hover:bg-coral hover:text-white"
     >
       <Trash2 size={17} /> Удалить
     </button>
@@ -651,7 +923,7 @@ function RemoveIconButton({ onClick }) {
 
 function UploadButton({ label, icon, accept, onFile }) {
   return (
-    <label className="focus-ring inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-line/70 bg-panel/60 px-4 py-2 text-sm font-semibold text-text transition hover:border-accent/40 hover:text-accent">
+    <label className="focus-ring inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg border border-line/70 bg-panel/60 px-4 py-2 text-sm font-semibold text-text transition hover:border-accent/40 hover:text-accent">
       {icon} {label}
       <input
         type="file"
@@ -703,6 +975,71 @@ function MediaList({ photos, videos, onRemovePhoto, onRemoveVideo }) {
       )}
     </div>
   )
+}
+
+function buildExternalVideo(url, name, coverUrl) {
+  return {
+    url,
+    name: name?.trim() || buildExternalVideoTitle(url),
+    provider: getVideoProvider(url),
+    coverUrl: coverUrl?.trim() || getYoutubeCoverUrl(url),
+    type: 'external',
+    mimeType: '',
+    size: null,
+  }
+}
+
+function buildExternalVideoTitle(url) {
+  const provider = getVideoProvider(url)
+
+  if (provider === 'youtube') {
+    return 'YouTube видео'
+  }
+
+  if (provider === 'instagram') {
+    return 'Instagram Reels'
+  }
+
+  return 'Видео'
+}
+
+function getVideoProvider(url) {
+  const normalized = String(url).toLowerCase()
+
+  if (normalized.includes('youtube.com') || normalized.includes('youtu.be')) {
+    return 'youtube'
+  }
+
+  if (normalized.includes('instagram.com')) {
+    return 'instagram'
+  }
+
+  return 'external'
+}
+
+function getYoutubeCoverUrl(url) {
+  const id = getYoutubeId(url)
+  return id ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : ''
+}
+
+function getYoutubeId(url) {
+  try {
+    const parsed = new URL(url)
+
+    if (parsed.hostname.includes('youtu.be')) {
+      return parsed.pathname.split('/').filter(Boolean)[0] || ''
+    }
+
+    if (parsed.searchParams.get('v')) {
+      return parsed.searchParams.get('v')
+    }
+
+    const parts = parsed.pathname.split('/').filter(Boolean)
+    const embedIndex = parts.findIndex((part) => ['embed', 'shorts'].includes(part))
+    return embedIndex >= 0 ? parts[embedIndex + 1] || '' : ''
+  } catch {
+    return ''
+  }
 }
 
 function getByPath(target, path) {
