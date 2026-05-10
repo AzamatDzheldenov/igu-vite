@@ -16,7 +16,15 @@ function Footer() {
         <div>
           <Link to="/" className="inline-flex items-center gap-3 text-lg font-semibold text-white">
             <span className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white shadow-soft">
-              <img src={logo} alt="" className="h-full w-full object-contain" />
+              <img
+                src={logo}
+                alt=""
+                width="171"
+                height="180"
+                loading="lazy"
+                decoding="async"
+                className="h-full w-full object-contain"
+              />
             </span>
             <span>{text(content?.site?.name, 'Колледж ИГУ')}</span>
           </Link>

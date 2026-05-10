@@ -37,6 +37,10 @@ function Gallery() {
                 <img
                   src={mediaUrl(item.photo?.url)}
                   alt={text(item.caption)}
+                  width="480"
+                  height="288"
+                  loading="lazy"
+                  decoding="async"
                   className="h-72 w-full object-cover"
                 />
                 <div className="p-5">

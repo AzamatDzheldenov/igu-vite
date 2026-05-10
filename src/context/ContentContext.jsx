@@ -1,11 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import axiosInstance from '../utils/axiosInstance'
+import { safeStorage } from '../utils/safeStorage'
 
 const ContentContext = createContext(null)
 
 export function ContentProvider({ children }) {
   const [content, setContent] = useState(null)
-  const [language, setLanguageState] = useState(() => localStorage.getItem('language') || 'ru')
+  const [language, setLanguageState] = useState(() => safeStorage.get('language', 'ru'))
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -29,7 +30,7 @@ export function ContentProvider({ children }) {
 
   const setLanguage = useCallback((nextLanguage) => {
     const normalized = nextLanguage === 'ky' ? 'ky' : 'ru'
-    localStorage.setItem('language', normalized)
+    safeStorage.set('language', normalized)
     setLanguageState(normalized)
   }, [])
 

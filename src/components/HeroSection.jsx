@@ -1,6 +1,8 @@
 import { ArrowRight, BookOpen, Sparkles } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import homeHeroAvif from '../assets/home-hero-bg.avif'
 import homeHeroBg from '../assets/home-hero-bg.png'
+import homeHeroWebp from '../assets/home-hero-bg.webp'
 import { useContent } from '../context/ContentContext'
 
 function HeroSection() {
@@ -9,11 +11,19 @@ function HeroSection() {
 
   return (
     <section className="relative min-h-[720px] overflow-hidden pt-32 sm:pt-36">
-      <div
-        className="absolute inset-0 bg-cover bg-center"
-        style={{ backgroundImage: `url(${homeHeroBg})` }}
-        aria-hidden="true"
-      />
+      <picture aria-hidden="true">
+        <source srcSet={homeHeroAvif} type="image/avif" />
+        <source srcSet={homeHeroWebp} type="image/webp" />
+        <img
+          src={homeHeroBg}
+          alt=""
+          width="1537"
+          height="1023"
+          fetchPriority="high"
+          decoding="async"
+          className="absolute inset-0 h-full w-full object-cover object-center"
+        />
+      </picture>
       <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] dark:bg-black/60" />
 
       <div className="page-shell relative z-10 grid min-h-[590px] items-end pb-12 lg:grid-cols-[1.08fr_0.92fr] lg:gap-10 lg:pb-16">

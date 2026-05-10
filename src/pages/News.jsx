@@ -51,6 +51,10 @@ function News() {
                         key={photo.url}
                         src={mediaUrl(photo.url)}
                         alt={text(item.title)}
+                        width="420"
+                        height="256"
+                        loading="lazy"
+                        decoding="async"
                         className="h-64 w-full object-cover"
                       />
                     ))}
@@ -123,7 +127,15 @@ function ExternalVideoCard({ video, language }) {
     >
       <div className="relative aspect-video bg-accent/12 sm:aspect-auto sm:min-h-36">
         {coverUrl ? (
-          <img src={coverUrl} alt={video.name} className="h-full w-full object-cover" />
+          <img
+            src={coverUrl}
+            alt={video.name}
+            width="220"
+            height="124"
+            loading="lazy"
+            decoding="async"
+            className="h-full w-full object-cover"
+          />
         ) : (
           <div className="flex h-full min-h-44 items-center justify-center bg-accent/10 text-accent sm:min-h-full">
             <PlayCircle size={42} />

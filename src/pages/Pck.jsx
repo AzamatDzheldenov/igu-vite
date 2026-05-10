@@ -46,6 +46,10 @@ function Pck() {
                     <img
                       src={mediaUrl(teacher.photo.url)}
                       alt={text(teacher.fullName)}
+                      width="420"
+                      height="288"
+                      loading="lazy"
+                      decoding="async"
                       className="h-72 w-full object-cover"
                     />
                   ) : (

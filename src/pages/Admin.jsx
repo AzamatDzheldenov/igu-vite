@@ -1,12 +1,19 @@
 import { Image, LogOut, Paperclip, Plus, Save, Trash2, Video } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useContent } from '../context/ContentContext'
 import axiosInstance from '../utils/axiosInstance'
 import { mediaUrl } from '../utils/media'
 
-const adminTabs = ['Главная', 'Новости', 'Документы', 'Галерея', 'Состав ПЦК']
+const adminTabs = ['Главная', 'Новости', 'Документы', 'Галерея', 'Состав ПЦК', 'Заявки']
 const smmTabs = ['Новости']
+const applicationStatuses = ['new', 'in_progress', 'done', 'rejected']
+const applicationStatusLabels = {
+  new: 'Новая',
+  in_progress: 'В работе',
+  done: 'Готово',
+  rejected: 'Отклонена',
+}
 
 const emptyBi = { ru: '', ky: '' }
 
@@ -242,10 +249,234 @@ function Admin() {
                 uploadFile={uploadFile}
               />
             )}
+            {activeTab === 'Заявки' && user?.role === 'admin' && <ApplicationsEditor />}
           </div>
         </div>
       </div>
     </section>
+  )
+}
+
+function ApplicationsEditor() {
+  const [applications, setApplications] = useState([])
+  const [counts, setCounts] = useState({ all: 0, new: 0, in_progress: 0, done: 0, rejected: 0 })
+  const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 })
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [query, setQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [sortDirection, setSortDirection] = useState('desc')
+  const debouncedQuery = useDebouncedValue(query, 400)
+  const sort = sortDirection === 'asc' ? 'created_at_asc' : 'created_at_desc'
+  const exportQuery = new URLSearchParams({
+    status: statusFilter,
+    search: debouncedQuery,
+    sort,
+  }).toString()
+
+  const loadApplications = useCallback(async () => {
+    setIsLoading(true)
+    setError('')
+
+    try {
+      const response = await axiosInstance.get('/admin/applications', {
+        params: {
+          page: pagination.page,
+          limit: pagination.limit,
+          status: statusFilter,
+          search: debouncedQuery,
+          sort,
+        },
+      })
+      setApplications(response.data.items || [])
+      setCounts(response.data.counts || { all: 0, new: 0, in_progress: 0, done: 0, rejected: 0 })
+      setPagination(response.data.pagination || { page: 1, limit: 20, total: 0, totalPages: 1 })
+    } catch (requestError) {
+      setError(requestError.response?.data?.message || 'Не удалось загрузить заявки.')
+    } finally {
+      setIsLoading(false)
+    }
+  }, [debouncedQuery, pagination.limit, pagination.page, sort, statusFilter])
+
+  useEffect(() => {
+    loadApplications()
+  }, [loadApplications])
+
+  useEffect(() => {
+    setPagination((current) => ({ ...current, page: 1 }))
+  }, [debouncedQuery, sortDirection, statusFilter])
+
+  const updateStatus = async (applicationId, status) => {
+    setError('')
+
+    try {
+      await axiosInstance.patch(`/admin/applications/${applicationId}/status`, { status })
+      loadApplications()
+    } catch (requestError) {
+      setError(requestError.response?.data?.message || 'Не удалось обновить статус заявки.')
+    }
+  }
+
+  return (
+    <div className="grid gap-5">
+      <PanelHeader
+        title="Заявки"
+        text="Входящие заявки с формы для абитуриентов. Доступно только администратору."
+        action={
+          <div className="flex flex-wrap gap-2">
+            <a
+              href={`/api/admin/applications/export.csv?${exportQuery}`}
+              className="focus-ring inline-flex min-h-11 items-center justify-center rounded-lg border border-line/70 bg-panel/60 px-4 py-2 text-sm font-semibold text-text transition hover:border-accent/40 hover:text-accent"
+            >
+              Экспорт CSV
+            </a>
+            <button
+              type="button"
+              onClick={loadApplications}
+              className="focus-ring inline-flex min-h-11 items-center justify-center rounded-lg border border-line/70 bg-panel/60 px-4 py-2 text-sm font-semibold text-text transition hover:border-accent/40 hover:text-accent"
+            >
+              Обновить
+            </button>
+          </div>
+        }
+      />
+
+      <div className="grid gap-3 md:grid-cols-5">
+        {[
+          ['Всего', counts.all],
+          ['Новые', counts.new],
+          ['В работе', counts.in_progress],
+          ['Готово', counts.done],
+          ['Отклонены', counts.rejected],
+        ].map(([label, value]) => (
+          <div key={label} className="rounded-lg border border-line/60 bg-panel/45 p-3">
+            <p className="text-xs font-semibold uppercase text-muted">{label}</p>
+            <p className="mt-1 text-2xl font-bold text-accent">{value}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-[1fr_220px_220px]">
+        <label className="block">
+          <span className="mb-2 block text-sm font-semibold text-text">Поиск</span>
+          <input
+            className="field-input"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Имя, телефон, email или программа"
+          />
+        </label>
+        <label className="block">
+          <span className="mb-2 block text-sm font-semibold text-text">Статус</span>
+          <select className="field-input" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+            <option value="all">Все статусы</option>
+            {applicationStatuses.map((status) => (
+              <option key={status} value={status}>
+                {applicationStatusLabels[status]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          <span className="mb-2 block text-sm font-semibold text-text">Сортировка</span>
+          <select className="field-input" value={sortDirection} onChange={(event) => setSortDirection(event.target.value)}>
+            <option value="desc">Сначала новые</option>
+            <option value="asc">Сначала старые</option>
+          </select>
+        </label>
+      </div>
+
+      {error && (
+        <p className="rounded-lg bg-coral/12 px-4 py-3 text-sm font-medium text-coral">
+          {error}
+        </p>
+      )}
+
+      {isLoading ? (
+        <div className="rounded-[20px] border border-line/60 bg-panel/45 p-5 text-sm text-muted">
+          Загружаем заявки...
+        </div>
+      ) : applications.length === 0 ? (
+        <div className="rounded-[20px] border border-line/60 bg-panel/45 p-5 text-sm text-muted">
+          {counts.all === 0
+            ? 'Заявок пока нет. Когда абитуриент отправит форму, заявка появится здесь.'
+            : 'По текущему поиску и фильтрам заявок не найдено.'}
+        </div>
+      ) : (
+        <>
+          <div className="grid gap-4">
+            {applications.map((application) => (
+              <article key={application.id} className="rounded-[20px] border border-line/60 bg-panel/45 p-4">
+                <div className="grid gap-4 xl:grid-cols-[1fr_220px]">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-xs font-semibold uppercase text-accent">
+                        {formatAdminDate(application.created_at)}
+                      </p>
+                      <span className="rounded-lg bg-accent/10 px-2 py-1 text-xs font-semibold text-accent">
+                        {applicationStatusLabels[application.status] || application.status}
+                      </span>
+                    </div>
+                    <h3 className="mt-3 text-xl font-semibold text-text">{application.name}</h3>
+                    <div className="mt-3 grid gap-2 text-sm leading-6 text-muted md:grid-cols-2">
+                      <p>Телефон: <span className="font-semibold text-text">{application.phone}</span></p>
+                      <p>Email: <span className="font-semibold text-text">{application.email || '-'}</span></p>
+                      <p className="md:col-span-2">Программа: <span className="font-semibold text-text">{application.program || '-'}</span></p>
+                    </div>
+                    {application.message && (
+                      <p className="mt-3 whitespace-pre-wrap rounded-lg bg-panel/60 p-3 text-sm leading-6 text-text">
+                        {application.message}
+                      </p>
+                    )}
+                  </div>
+
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-semibold text-text">Статус</span>
+                    <select
+                      className="field-input"
+                      value={application.status}
+                      onChange={(event) => updateStatus(application.id, event.target.value)}
+                    >
+                      {applicationStatuses.map((status) => (
+                        <option key={status} value={status}>
+                          {applicationStatusLabels[status]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              </article>
+            ))}
+          </div>
+
+          {pagination.totalPages > 1 && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-[20px] border border-line/60 bg-panel/45 p-3">
+              <p className="text-sm text-muted">
+                Страница {pagination.page} из {pagination.totalPages}. Всего: {pagination.total}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={pagination.page <= 1}
+                  onClick={() => setPagination((current) => ({ ...current, page: current.page - 1 }))}
+                  className="focus-ring min-h-11 rounded-lg border border-line/70 px-4 py-2 text-sm font-semibold text-text disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Назад
+                </button>
+                <button
+                  type="button"
+                  disabled={pagination.page >= pagination.totalPages}
+                  onClick={() => setPagination((current) => ({ ...current, page: current.page + 1 }))}
+                  className="focus-ring min-h-11 rounded-lg border border-line/70 px-4 py-2 text-sm font-semibold text-text disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Далее
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
   )
 }
 
@@ -619,7 +850,15 @@ function NewsEditor({ draft, updateField, addItem, removeItem, uploadFile }) {
                 {item.text.ru || 'Текст новости будет выглядеть как публикация.'}
               </p>
               {item.photos[0] && (
-                <img src={mediaUrl(item.photos[0].url)} alt="" className="mt-4 h-44 w-full rounded-lg object-cover" />
+                <img
+                  src={mediaUrl(item.photos[0].url)}
+                  alt=""
+                  width="288"
+                  height="176"
+                  loading="lazy"
+                  decoding="async"
+                  className="mt-4 h-44 w-full rounded-lg object-cover"
+                />
               )}
             </div>
           </div>
@@ -721,7 +960,17 @@ function GalleryEditor({ draft, updateField, addItem, removeItem, uploadFile }) 
       <div className="grid gap-4 md:grid-cols-2">
         {draft.gallery.map((item, index) => (
           <article key={item.id} className="rounded-[20px] border border-line/60 bg-panel/45 p-4">
-            {item.photo && <img src={mediaUrl(item.photo.url)} alt="" className="mb-4 h-52 w-full rounded-lg object-cover" />}
+            {item.photo && (
+              <img
+                src={mediaUrl(item.photo.url)}
+                alt=""
+                width="360"
+                height="208"
+                loading="lazy"
+                decoding="async"
+                className="mb-4 h-52 w-full rounded-lg object-cover"
+              />
+            )}
             <TextInput
               label="Подпись RU"
               value={item.caption.ru}
@@ -798,7 +1047,15 @@ function PckEditor({ draft, updateField, addItem, removeItem, uploadFile }) {
             {(pck?.teachers || []).map((teacher, teacherIndex) => (
               <article key={teacherIndex} className="rounded-[20px] border border-line/60 bg-panel/60 p-4">
                 {teacher.photo && (
-                  <img src={mediaUrl(teacher.photo.url)} alt="" className="mb-4 h-52 w-full rounded-lg object-cover" />
+                  <img
+                    src={mediaUrl(teacher.photo.url)}
+                    alt=""
+                    width="360"
+                    height="208"
+                    loading="lazy"
+                    decoding="async"
+                    className="mb-4 h-52 w-full rounded-lg object-cover"
+                  />
                 )}
                 <TextInput
                   label="ФИО RU"
@@ -1040,6 +1297,34 @@ function getYoutubeId(url) {
   } catch {
     return ''
   }
+}
+
+function formatAdminDate(value) {
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) {
+    return ''
+  }
+
+  return new Intl.DateTimeFormat('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
+function useDebouncedValue(value, delay) {
+  const [debouncedValue, setDebouncedValue] = useState(value)
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => setDebouncedValue(value), delay)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [delay, value])
+
+  return debouncedValue
 }
 
 function getByPath(target, path) {

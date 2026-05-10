@@ -1,13 +1,14 @@
 import { Moon, Sun } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useContent } from '../context/ContentContext'
+import { safeStorage } from '../utils/safeStorage'
 
 function getInitialTheme() {
   if (typeof window === 'undefined') {
     return 'light'
   }
 
-  const savedTheme = localStorage.getItem('theme')
+  const savedTheme = safeStorage.get('theme')
 
   if (savedTheme) {
     return savedTheme
@@ -30,7 +31,7 @@ function ThemeToggle() {
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', isDark)
-    localStorage.setItem('theme', theme)
+    safeStorage.set('theme', theme)
   }, [isDark, theme])
 
   return (

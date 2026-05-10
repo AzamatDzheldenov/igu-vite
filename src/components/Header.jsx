@@ -28,7 +28,14 @@ function Header() {
             onClick={() => setIsOpen(false)}
           >
             <span className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white shadow-soft sm:h-16 sm:w-16">
-              <img src={logo} alt="" className="h-full w-full object-contain" />
+              <img
+                src={logo}
+                alt=""
+                width="171"
+                height="180"
+                decoding="async"
+                className="h-full w-full object-contain"
+              />
             </span>
           </Link>
 

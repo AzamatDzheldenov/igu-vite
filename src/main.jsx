@@ -4,8 +4,10 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App.jsx'
 import { ContentProvider } from './context/ContentContext.jsx'
 import './index.css'
+import { normalizeBasePath } from './utils/basePath.js'
+import { safeStorage } from './utils/safeStorage.js'
 
-const savedTheme = localStorage.getItem('theme')
+const savedTheme = safeStorage.get('theme')
 const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
 
 if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
@@ -14,7 +16,7 @@ if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <BrowserRouter basename="/igu-vite">
+    <BrowserRouter basename={normalizeBasePath(import.meta.env.VITE_BASE_PATH)}>
       <ContentProvider>
         <App />
       </ContentProvider>

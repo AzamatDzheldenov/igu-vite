@@ -27,6 +27,7 @@ db.pragma('journal_mode = WAL')
 export function initializeDatabase() {
   createBaseSchema()
   migrateUserSchema()
+  migrateApplicationSchema()
   ensureInitialUsers()
   seedSiteContent()
   migrateSiteContent()
@@ -56,6 +57,67 @@ export function markUserLogin(userId) {
 
 export function clearExpiredSessions() {
   db.prepare('DELETE FROM sessions WHERE expires_at <= ?').run(Date.now())
+}
+
+export function createApplication(application) {
+  const result = db
+    .prepare(
+      `INSERT INTO applications (name, phone, email, program, message, ip, user_agent)
+       VALUES (@name, @phone, @email, @program, @message, @ip, @userAgent)`,
+    )
+    .run(application)
+
+  return result.lastInsertRowid
+}
+
+export function listApplications(options = {}) {
+  const query = buildApplicationQuery(options)
+  const total = db.prepare(`SELECT COUNT(*) AS total FROM applications ${query.whereSql}`).get(query.params).total
+  const totalPages = Math.max(1, Math.ceil(total / query.limit))
+  const page = Math.min(query.page, totalPages)
+  const offset = (page - 1) * query.limit
+  const items = db
+    .prepare(
+      `SELECT id, name, phone, email, program, message, status, ip, user_agent, created_at
+       FROM applications
+       ${query.whereSql}
+       ORDER BY ${query.orderSql}, id DESC
+       LIMIT @limit OFFSET @offset`,
+    )
+    .all({ ...query.params, limit: query.limit, offset })
+  const counts = getApplicationCounts(query.searchWhereSql, query.searchParams)
+
+  return {
+    items,
+    pagination: {
+      page,
+      limit: query.limit,
+      total,
+      totalPages,
+    },
+    counts,
+  }
+}
+
+export function listApplicationsForExport(options = {}) {
+  const query = buildApplicationQuery({ ...options, page: 1, limit: 100000 })
+
+  return db
+    .prepare(
+      `SELECT id, created_at, name, phone, email, program, message, status, ip, user_agent
+       FROM applications
+       ${query.whereSql}
+       ORDER BY ${query.orderSql}, id DESC`,
+    )
+    .all(query.params)
+}
+
+export function updateApplicationStatus(id, status) {
+  const result = db
+    .prepare('UPDATE applications SET status = ? WHERE id = ?')
+    .run(status, id)
+
+  return result.changes > 0
 }
 
 export function getSiteContent() {
@@ -97,7 +159,116 @@ function createBaseSchema() {
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS applications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      email TEXT,
+      program TEXT,
+      message TEXT,
+      status TEXT NOT NULL DEFAULT 'new',
+      ip TEXT,
+      user_agent TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS applications_created_at_idx ON applications(created_at);
+    CREATE INDEX IF NOT EXISTS applications_email_idx ON applications(email);
   `)
+}
+
+function migrateApplicationSchema() {
+  const columns = getTableColumns('applications')
+
+  addColumnIfMissingForTable(columns, 'applications', 'status', "TEXT NOT NULL DEFAULT 'new'")
+  addColumnIfMissingForTable(columns, 'applications', 'ip', 'TEXT')
+
+  if (columns.has('ip_address')) {
+    db.prepare("UPDATE applications SET ip = ip_address WHERE (ip IS NULL OR TRIM(ip) = '') AND ip_address IS NOT NULL").run()
+  }
+
+  db.prepare("UPDATE applications SET status = 'new' WHERE status IS NULL OR status NOT IN ('new', 'in_progress', 'done', 'rejected')").run()
+}
+
+function buildApplicationQuery(options) {
+  const page = Math.max(1, Number(options.page) || 1)
+  const limit = Math.min(100, Math.max(1, Number(options.limit) || 20))
+  const status = ['new', 'in_progress', 'done', 'rejected'].includes(options.status)
+    ? options.status
+    : 'all'
+  const search = typeof options.search === 'string' ? options.search.trim().slice(0, 120) : ''
+  const sort = options.sort === 'created_at_asc' ? 'created_at_asc' : 'created_at_desc'
+  const conditions = []
+  const params = {}
+  const searchWhereSql = buildApplicationSearchCondition(search, params)
+
+  if (searchWhereSql) {
+    conditions.push(searchWhereSql)
+  }
+
+  if (status !== 'all') {
+    conditions.push('status = @status')
+    params.status = status
+  }
+
+  return {
+    page,
+    limit,
+    status,
+    search,
+    params,
+    whereSql: conditions.length ? `WHERE ${conditions.join(' AND ')}` : '',
+    searchWhereSql: searchWhereSql ? `WHERE ${searchWhereSql}` : '',
+    searchParams: search ? { search: params.search } : {},
+    orderSql: sort === 'created_at_asc' ? 'datetime(created_at) ASC' : 'datetime(created_at) DESC',
+  }
+}
+
+function buildApplicationSearchCondition(search, params) {
+  if (!search) {
+    return ''
+  }
+
+  params.search = `%${search.toLowerCase()}%`
+  return [
+    'LOWER(name) LIKE @search',
+    'LOWER(phone) LIKE @search',
+    "LOWER(COALESCE(email, '')) LIKE @search",
+    "LOWER(COALESCE(program, '')) LIKE @search",
+    "LOWER(COALESCE(message, '')) LIKE @search",
+  ].map((condition, index, conditions) => {
+    if (index === 0) {
+      return `(${condition}`
+    }
+
+    if (index === conditions.length - 1) {
+      return `${condition})`
+    }
+
+    return condition
+  }).join(' OR ')
+}
+
+function getApplicationCounts(searchWhereSql, searchParams) {
+  const rows = db
+    .prepare(
+      `SELECT status, COUNT(*) AS total
+       FROM applications
+       ${searchWhereSql}
+       GROUP BY status`,
+    )
+    .all(searchParams)
+  const counts = { all: 0, new: 0, in_progress: 0, done: 0, rejected: 0 }
+
+  rows.forEach((row) => {
+    if (Object.hasOwn(counts, row.status)) {
+      counts[row.status] = row.total
+      counts.all += row.total
+    }
+  })
+
+  return counts
 }
 
 function migrateUserSchema() {
@@ -228,6 +399,13 @@ function getTableColumns(tableName) {
 function addColumnIfMissing(columns, columnName, definition) {
   if (!columns.has(columnName)) {
     db.exec(`ALTER TABLE users ADD COLUMN ${columnName} ${definition};`)
+    columns.add(columnName)
+  }
+}
+
+function addColumnIfMissingForTable(columns, tableName, columnName, definition) {
+  if (!columns.has(columnName)) {
+    db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition};`)
     columns.add(columnName)
   }
 }
