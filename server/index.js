@@ -18,8 +18,10 @@ import {
   findUserByUsername,
   getSiteContent,
   initializeDatabase,
+  listAuditLogs,
   listApplications,
   listApplicationsForExport,
+  logAuditEvent,
   markUserLogin,
   updateApplicationStatus,
   updateSiteContent,
@@ -31,9 +33,11 @@ const __dirname = path.dirname(__filename)
 const rootDir = path.resolve(__dirname, '..')
 const distDir = path.join(rootDir, 'dist')
 const uploadDir = path.join(__dirname, 'uploads')
+const backupDir = path.join(rootDir, 'backups')
 const app = express()
 const port = Number(process.env.PORT || 4000)
 const isProduction = process.env.NODE_ENV === 'production'
+const servesClient = isProduction || process.env.NODE_ENV === 'test'
 const sessionCookieName = process.env.SESSION_COOKIE_NAME || 'igu_admin_session'
 const sessionTtlMs = 1000 * 60 * 60 * 8
 const allowedOrigins = buildAllowedOrigins()
@@ -69,6 +73,7 @@ const allowedApplicationStatuses = new Set(['new', 'in_progress', 'done', 'rejec
 const maxCsvExportRows = 10000
 
 fs.mkdirSync(uploadDir, { recursive: true })
+fs.mkdirSync(backupDir, { recursive: true })
 
 try {
   initializeDatabase()
@@ -100,6 +105,45 @@ app.use(
   }),
 )
 app.use(requestLogger)
+
+app.get('/healthz', async (_request, response) => {
+  const checks = {
+    database: 'ok',
+    uploads: 'ok',
+    backups: 'ok',
+  }
+
+  try {
+    db.prepare('SELECT 1').get()
+  } catch {
+    checks.database = 'failed'
+  }
+
+  const directoryChecks = [
+    ['uploads', uploadDir],
+    ['backups', backupDir],
+  ]
+
+  await Promise.all(
+    directoryChecks.map(async ([name, directory]) => {
+      try {
+        await fs.promises.access(directory, fs.constants.R_OK | fs.constants.W_OK)
+      } catch {
+        checks[name] = 'failed'
+      }
+    }),
+  )
+
+  const isOk = Object.values(checks).every((status) => status === 'ok')
+
+  response.status(isOk ? 200 : 503).json({
+    status: isOk ? 'ok' : 'degraded',
+    checks,
+    uptime_seconds: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString(),
+  })
+})
+
 app.use(express.json({ limit: '2mb' }))
 app.use(cookieParser())
 app.use(
@@ -209,6 +253,12 @@ app.post('/api/auth/login', authLimiter, (request, response) => {
   const password = typeof request.body?.password === 'string' ? request.body.password : ''
 
   if (!username || !password) {
+    auditRequest(request, {
+      username,
+      action: 'admin_login_failed',
+      entityType: 'auth',
+      entityId: username,
+    })
     return response.status(400).json({ message: 'Введите логин и пароль.' })
   }
 
@@ -217,6 +267,12 @@ app.post('/api/auth/login', authLimiter, (request, response) => {
 
   if (!user || !user.is_active || !['admin', 'smm'].includes(user.role) || !hasValidPassword) {
     securityLog('login_failed', request, { username })
+    auditRequest(request, {
+      username,
+      action: 'admin_login_failed',
+      entityType: 'auth',
+      entityId: username,
+    })
     return response.status(401).json({ message: 'Неверный логин или пароль.' })
   }
 
@@ -241,6 +297,13 @@ app.post('/api/auth/login', authLimiter, (request, response) => {
   })
 
   securityLog('login_success', request, { username: user.username, role: user.role })
+  auditRequest(request, {
+    username: user.username,
+    role: user.role,
+    action: 'admin_login',
+    entityType: 'auth',
+    entityId: String(user.id),
+  })
 
   return response.json({ user: { login: user.username, username: user.username, role: user.role } })
 })
@@ -261,6 +324,13 @@ app.post('/api/auth/logout', (request, response) => {
   })
 
   securityLog('logout', request, { username: session?.username || 'unknown' })
+  auditRequest(request, {
+    username: session?.username || '',
+    role: session?.role || '',
+    action: 'admin_logout',
+    entityType: 'auth',
+    entityId: session?.user_id ? String(session.user_id) : '',
+  })
   response.json({ ok: true })
 })
 
@@ -270,6 +340,10 @@ app.get('/api/auth/me', requireEditor, (request, response) => {
 
 app.get('/api/admin/applications', requireAdmin, (request, response) => {
   response.json(listApplications(getApplicationListOptions(request.query)))
+})
+
+app.get('/api/admin/audit-logs', requireAdmin, (request, response) => {
+  response.json(listAuditLogs(getAuditListOptions(request.query)))
 })
 
 app.get('/api/admin/applications/export.csv', requireAdmin, (request, response) => {
@@ -283,6 +357,12 @@ app.get('/api/admin/applications/export.csv', requireAdmin, (request, response) 
 
   const csv = buildApplicationsCsv(rows)
   const date = new Date().toISOString().slice(0, 10)
+
+  auditRequest(request, {
+    action: 'applications_csv_export',
+    entityType: 'applications',
+    entityId: String(rows.length),
+  })
 
   response.setHeader('Content-Type', 'text/csv; charset=utf-8')
   response.setHeader('Content-Disposition', `attachment; filename="applications-${date}.csv"`)
@@ -304,6 +384,11 @@ app.patch('/api/admin/applications/:id/status', adminContentSaveLimiter, require
   }
 
   securityLog('application_status_updated', request, { applicationId, status })
+  auditRequest(request, {
+    action: 'application_status_change',
+    entityType: 'application',
+    entityId: String(applicationId),
+  })
   response.json({ ok: true })
 })
 
@@ -328,6 +413,12 @@ app.post('/api/admin/uploads', uploadLimiter, requireEditor, upload.single('file
 
   const relativeUrl = `/uploads/${validation.type}s/${request.file.filename}`
 
+  auditRequest(request, {
+    action: 'upload',
+    entityType: validation.type,
+    entityId: request.file.filename,
+  })
+
   return response.status(201).json({
     url: relativeUrl,
     name: request.file.originalname,
@@ -343,10 +434,18 @@ app.put('/api/admin/content', adminContentSaveLimiter, requireEditor, (request, 
       ? buildSmmScopedContent(request)
       : request.body
   const normalized = normalizeContent(incoming)
-  response.json(updateSiteContent(normalized))
+  const updatedContent = updateSiteContent(normalized)
+
+  auditRequest(request, {
+    action: 'content_save',
+    entityType: request.user.role === 'smm' ? 'news' : 'site_content',
+    entityId: '1',
+  })
+
+  response.json(updatedContent)
 })
 
-if (isProduction) {
+if (servesClient) {
   app.use(express.static(distDir))
   app.get(/.*/, (_request, response) => {
     response.sendFile(path.join(distDir, 'index.html'))
@@ -573,6 +672,27 @@ function getApplicationListOptions(query) {
     search: query.search,
     sort: query.sort,
   }
+}
+
+function getAuditListOptions(query) {
+  return {
+    page: query.page,
+    limit: query.limit,
+    search: query.search,
+    action: query.action,
+  }
+}
+
+function auditRequest(request, event) {
+  logAuditEvent({
+    username: event.username || request.user?.username || '',
+    role: event.role || request.user?.role || '',
+    action: event.action,
+    entityType: event.entityType,
+    entityId: event.entityId,
+    ip: request.ip || '',
+    userAgent: asText(request.get('user-agent'), 300),
+  })
 }
 
 function notifyTelegramApplication(application, applicationId) {

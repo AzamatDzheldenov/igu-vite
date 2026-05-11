@@ -26,6 +26,7 @@ db.pragma('journal_mode = WAL')
 
 export function initializeDatabase() {
   createBaseSchema()
+  createAuditSchema()
   migrateUserSchema()
   migrateApplicationSchema()
   ensureInitialUsers()
@@ -133,6 +134,87 @@ export function updateSiteContent(content) {
   return getSiteContent()
 }
 
+export function logAuditEvent(event = {}) {
+  try {
+    const action = normalizeAuditText(event.action, 80)
+
+    if (!action) {
+      return
+    }
+
+    db.prepare(
+      `INSERT INTO audit_logs (username, role, action, entity_type, entity_id, ip, user_agent)
+       VALUES (@username, @role, @action, @entityType, @entityId, @ip, @userAgent)`,
+    ).run({
+      username: normalizeAuditText(event.username, 120),
+      role: normalizeAuditText(event.role, 40),
+      action,
+      entityType: normalizeAuditText(event.entityType, 80),
+      entityId: normalizeAuditText(event.entityId, 120),
+      ip: normalizeAuditText(event.ip, 120),
+      userAgent: normalizeAuditText(event.userAgent, 300),
+    })
+  } catch (error) {
+    console.error(`[audit] write_failed message=${String(error.message || 'unknown').replace(/\s+/g, '_').slice(0, 160)}`)
+  }
+}
+
+export function listAuditLogs(options = {}) {
+  const page = Math.max(1, Number(options.page) || 1)
+  const limit = Math.min(100, Math.max(1, Number(options.limit) || 20))
+  const search = typeof options.search === 'string' ? options.search.trim().slice(0, 120) : ''
+  const action = typeof options.action === 'string' ? options.action.trim().slice(0, 80) : ''
+  const conditions = []
+  const params = {}
+
+  if (search) {
+    params.search = `%${search.toLowerCase()}%`
+    conditions.push(
+      `(LOWER(COALESCE(username, '')) LIKE @search
+        OR LOWER(COALESCE(role, '')) LIKE @search
+        OR LOWER(action) LIKE @search
+        OR LOWER(COALESCE(entity_type, '')) LIKE @search
+        OR LOWER(COALESCE(entity_id, '')) LIKE @search
+        OR LOWER(COALESCE(ip, '')) LIKE @search)`,
+    )
+  }
+
+  if (action && action !== 'all') {
+    params.action = action
+    conditions.push('action = @action')
+  }
+
+  const whereSql = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+  const total = db.prepare(`SELECT COUNT(*) AS total FROM audit_logs ${whereSql}`).get(params).total
+  const totalPages = Math.max(1, Math.ceil(total / limit))
+  const currentPage = Math.min(page, totalPages)
+  const offset = (currentPage - 1) * limit
+  const items = db
+    .prepare(
+      `SELECT id, username, role, action, entity_type, entity_id, ip, user_agent, created_at
+       FROM audit_logs
+       ${whereSql}
+       ORDER BY datetime(created_at) DESC, id DESC
+       LIMIT @limit OFFSET @offset`,
+    )
+    .all({ ...params, limit, offset })
+  const actions = db
+    .prepare('SELECT DISTINCT action FROM audit_logs ORDER BY action ASC')
+    .all()
+    .map((row) => row.action)
+
+  return {
+    items,
+    actions,
+    pagination: {
+      page: currentPage,
+      limit,
+      total,
+      totalPages,
+    },
+  }
+}
+
 function createBaseSchema() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
@@ -175,6 +257,26 @@ function createBaseSchema() {
 
     CREATE INDEX IF NOT EXISTS applications_created_at_idx ON applications(created_at);
     CREATE INDEX IF NOT EXISTS applications_email_idx ON applications(email);
+  `)
+}
+
+function createAuditSchema() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT,
+      role TEXT,
+      action TEXT NOT NULL,
+      entity_type TEXT,
+      entity_id TEXT,
+      ip TEXT,
+      user_agent TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS audit_logs_created_at_idx ON audit_logs(created_at);
+    CREATE INDEX IF NOT EXISTS audit_logs_action_idx ON audit_logs(action);
+    CREATE INDEX IF NOT EXISTS audit_logs_username_idx ON audit_logs(username);
   `)
 }
 
@@ -412,6 +514,10 @@ function addColumnIfMissingForTable(columns, tableName, columnName, definition) 
 
 function normalizeUsername(username) {
   return typeof username === 'string' ? username.trim() : ''
+}
+
+function normalizeAuditText(value, maxLength) {
+  return typeof value === 'string' ? value.trim().slice(0, maxLength) : ''
 }
 
 function seedSiteContent() {

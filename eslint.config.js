@@ -29,7 +29,7 @@ export default defineConfig([
     },
   },
   {
-    files: ['server/**/*.js'],
+    files: ['server/**/*.js', 'playwright.config.js'],
     extends: [js.configs.recommended],
     languageOptions: {
       ecmaVersion: 'latest',

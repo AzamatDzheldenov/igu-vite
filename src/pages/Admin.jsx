@@ -5,7 +5,7 @@ import { useContent } from '../context/ContentContext'
 import axiosInstance from '../utils/axiosInstance'
 import { mediaUrl } from '../utils/media'
 
-const adminTabs = ['Главная', 'Новости', 'Документы', 'Галерея', 'Состав ПЦК', 'Заявки']
+const adminTabs = ['Главная', 'Новости', 'Документы', 'Галерея', 'Состав ПЦК', 'Заявки', 'Audit Logs']
 const smmTabs = ['Новости']
 const applicationStatuses = ['new', 'in_progress', 'done', 'rejected']
 const applicationStatusLabels = {
@@ -250,6 +250,7 @@ function Admin() {
               />
             )}
             {activeTab === 'Заявки' && user?.role === 'admin' && <ApplicationsEditor />}
+            {activeTab === 'Audit Logs' && user?.role === 'admin' && <AuditLogsEditor />}
           </div>
         </div>
       </div>
@@ -447,6 +448,158 @@ function ApplicationsEditor() {
                 </div>
               </article>
             ))}
+          </div>
+
+          {pagination.totalPages > 1 && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-[20px] border border-line/60 bg-panel/45 p-3">
+              <p className="text-sm text-muted">
+                Страница {pagination.page} из {pagination.totalPages}. Всего: {pagination.total}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={pagination.page <= 1}
+                  onClick={() => setPagination((current) => ({ ...current, page: current.page - 1 }))}
+                  className="focus-ring min-h-11 rounded-lg border border-line/70 px-4 py-2 text-sm font-semibold text-text disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Назад
+                </button>
+                <button
+                  type="button"
+                  disabled={pagination.page >= pagination.totalPages}
+                  onClick={() => setPagination((current) => ({ ...current, page: current.page + 1 }))}
+                  className="focus-ring min-h-11 rounded-lg border border-line/70 px-4 py-2 text-sm font-semibold text-text disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Далее
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+function AuditLogsEditor() {
+  const [logs, setLogs] = useState([])
+  const [actions, setActions] = useState([])
+  const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 })
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [query, setQuery] = useState('')
+  const [actionFilter, setActionFilter] = useState('all')
+  const debouncedQuery = useDebouncedValue(query, 400)
+
+  const loadAuditLogs = useCallback(async () => {
+    setIsLoading(true)
+    setError('')
+
+    try {
+      const response = await axiosInstance.get('/admin/audit-logs', {
+        params: {
+          page: pagination.page,
+          limit: pagination.limit,
+          search: debouncedQuery,
+          action: actionFilter,
+        },
+      })
+      setLogs(response.data.items || [])
+      setActions(response.data.actions || [])
+      setPagination(response.data.pagination || { page: 1, limit: 20, total: 0, totalPages: 1 })
+    } catch (requestError) {
+      setError(requestError.response?.data?.message || 'Не удалось загрузить audit logs.')
+    } finally {
+      setIsLoading(false)
+    }
+  }, [actionFilter, debouncedQuery, pagination.limit, pagination.page])
+
+  useEffect(() => {
+    loadAuditLogs()
+  }, [loadAuditLogs])
+
+  useEffect(() => {
+    setPagination((current) => ({ ...current, page: 1 }))
+  }, [actionFilter, debouncedQuery])
+
+  return (
+    <div className="grid gap-5">
+      <PanelHeader
+        title="Audit Logs"
+        text="Журнал административных действий и событий безопасности. Доступно только администратору."
+        action={
+          <button
+            type="button"
+            onClick={loadAuditLogs}
+            className="focus-ring inline-flex min-h-11 items-center justify-center rounded-lg border border-line/70 bg-panel/60 px-4 py-2 text-sm font-semibold text-text transition hover:border-accent/40 hover:text-accent"
+          >
+            Обновить
+          </button>
+        }
+      />
+
+      <div className="grid gap-3 lg:grid-cols-[1fr_260px]">
+        <label className="block">
+          <span className="mb-2 block text-sm font-semibold text-text">Поиск</span>
+          <input
+            className="field-input"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Username, role, action, IP или entity"
+          />
+        </label>
+        <label className="block">
+          <span className="mb-2 block text-sm font-semibold text-text">Action</span>
+          <select className="field-input" value={actionFilter} onChange={(event) => setActionFilter(event.target.value)}>
+            <option value="all">Все действия</option>
+            {actions.map((action) => (
+              <option key={action} value={action}>
+                {action}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      {error && (
+        <p className="rounded-lg bg-coral/12 px-4 py-3 text-sm font-medium text-coral">
+          {error}
+        </p>
+      )}
+
+      {isLoading ? (
+        <div className="rounded-[20px] border border-line/60 bg-panel/45 p-5 text-sm text-muted">
+          Загружаем audit logs...
+        </div>
+      ) : logs.length === 0 ? (
+        <div className="rounded-[20px] border border-line/60 bg-panel/45 p-5 text-sm text-muted">
+          По текущему поиску и фильтрам событий не найдено.
+        </div>
+      ) : (
+        <>
+          <div className="overflow-hidden rounded-[20px] border border-line/60 bg-panel/45">
+            <div className="hidden grid-cols-[160px_120px_80px_180px_1fr_130px] gap-3 border-b border-line/60 px-4 py-3 text-xs font-semibold uppercase text-muted xl:grid">
+              <span>Дата</span>
+              <span>Username</span>
+              <span>Role</span>
+              <span>Action</span>
+              <span>Entity</span>
+              <span>IP</span>
+            </div>
+            <div className="divide-y divide-line/60">
+              {logs.map((log) => (
+                <article key={log.id} className="grid gap-3 px-4 py-4 text-sm xl:grid-cols-[160px_120px_80px_180px_1fr_130px]">
+                  <p className="font-semibold text-accent">{formatAdminDate(log.created_at)}</p>
+                  <p className="text-text">{log.username || '-'}</p>
+                  <p className="text-muted">{log.role || '-'}</p>
+                  <p className="break-words font-semibold text-text">{log.action}</p>
+                  <p className="break-words text-muted">
+                    {[log.entity_type, log.entity_id].filter(Boolean).join(': ') || '-'}
+                  </p>
+                  <p className="break-words text-muted">{log.ip || '-'}</p>
+                </article>
+              ))}
+            </div>
           </div>
 
           {pagination.totalPages > 1 && (

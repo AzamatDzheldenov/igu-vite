@@ -11,10 +11,13 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
     "deploy": "npm run build && gh-pages -d dist",
     "backup": "node scripts/backup.js",
     "check:prod": "npm run lint && npm run build && npm audit --omit=dev",
-    "check:full": "npm run check:prod && npm run backup"
+    "check:full": "npm run check:prod && npm run backup",
+    "check:all": "npm run lint && npm run build && npm audit --omit=dev && npm run test:e2e"
   },
   "dependencies": {
     "@fontsource/inter": "^5.2.8",
@@ -39,6 +42,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
+    "@playwright/test": "^1.59.1",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",

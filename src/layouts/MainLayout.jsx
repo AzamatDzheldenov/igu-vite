@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { Outlet, useLocation, useOutlet } from 'react-router-dom'
 import Footer from '../components/Footer'
 import Header from '../components/Header'
@@ -14,6 +14,14 @@ const pageTransition = {
 function MainLayout() {
   const location = useLocation()
   const outlet = useOutlet()
+  const shouldReduceMotion = useReducedMotion()
+  const transitionVariants = shouldReduceMotion
+    ? {
+        initial: { opacity: 1 },
+        animate: { opacity: 1 },
+        exit: { opacity: 1 },
+      }
+    : pageTransition
 
   return (
     <div className="min-h-screen bg-mesh-light text-text transition-colors duration-500 dark:bg-mesh-dark">
@@ -22,11 +30,11 @@ function MainLayout() {
         <AnimatePresence mode="wait">
           <MotionPage
             key={location.pathname}
-            variants={pageTransition}
+            variants={transitionVariants}
             initial="initial"
             animate="animate"
             exit="exit"
-            transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
+            transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
           >
             {outlet || <Outlet />}
           </MotionPage>
